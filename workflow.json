@@ -1,0 +1,797 @@
+{
+  "name": "AI Content Repurposer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "repurpose-content",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "repurpose-content"
+    },
+    {
+      "parameters": {
+        "manualTriggerNotice": "Use this for testing. Set the URL and platforms in the Set Defaults node."
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000002",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 560]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "url",
+              "name": "url",
+              "value": "={{ $json.body?.url || $json.url || 'https://example.com/blog/sample-article' }}",
+              "type": "string"
+            },
+            {
+              "id": "platforms",
+              "name": "platforms",
+              "value": "={{ $json.body?.platforms || $json.platforms || ['linkedin', 'twitter', 'newsletter', 'instagram'] }}",
+              "type": "object"
+            },
+            {
+              "id": "tone",
+              "name": "tone",
+              "value": "={{ $json.body?.tone || $json.tone || 'professional' }}",
+              "type": "string"
+            },
+            {
+              "id": "author_handle",
+              "name": "author_handle",
+              "value": "={{ $json.body?.author_handle || $json.author_handle || '@author' }}",
+              "type": "string"
+            },
+            {
+              "id": "timestamp",
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000003",
+      "name": "Set Defaults",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000004",
+      "name": "Fetch Article",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 400]
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "title",
+              "cssSelector": "h1, title, [class*='title'], [class*='headline']",
+              "returnValue": "text"
+            },
+            {
+              "key": "body",
+              "cssSelector": "article, [class*='content'], [class*='post-body'], [class*='entry-content'], main, .prose",
+              "returnValue": "text"
+            },
+            {
+              "key": "meta_description",
+              "cssSelector": "meta[name='description']",
+              "returnValue": "attribute",
+              "attribute": "content"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000005",
+      "name": "Extract Article Content",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [720, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Clean and prepare extracted article text for AI processing\nconst input = $input.first().json;\n\nfunction cleanText(raw) {\n  if (!raw) return '';\n  \n  // Remove excessive whitespace and normalize line breaks\n  let text = raw\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\t/g, ' ')\n    .replace(/ {2,}/g, ' ')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .trim();\n  \n  // Remove common boilerplate patterns\n  const boilerplatePatterns = [\n    /cookie\\s*(policy|consent|preferences)[^\\n]*/gi,\n    /subscribe\\s*(to\\s*our)?\\s*newsletter[^\\n]*/gi,\n    /share\\s*(this|on)\\s*(article|post|facebook|twitter|linkedin)[^\\n]*/gi,\n    /related\\s*(articles|posts|reads)[^\\n]*/gi,\n    /advertisement[^\\n]*/gi,\n    /sponsored\\s*content[^\\n]*/gi,\n    /\\d+\\s*comments?/gi,\n    /leave\\s*a\\s*(comment|reply)[^\\n]*/gi,\n    /sign\\s*up\\s*(for|to)[^\\n]*/gi,\n    /follow\\s*us\\s*on[^\\n]*/gi\n  ];\n  \n  for (const pattern of boilerplatePatterns) {\n    text = text.replace(pattern, '');\n  }\n  \n  // Clean up after removals\n  text = text.replace(/\\n{3,}/g, '\\n\\n').trim();\n  \n  return text;\n}\n\nfunction extractKeyPoints(text, maxPoints = 5) {\n  // Split into sentences and find the most substantive ones\n  const sentences = text\n    .split(/[.!?]+/)\n    .map(s => s.trim())\n    .filter(s => s.length > 40 && s.length < 300)\n    .filter(s => !s.match(/^(click|subscribe|sign up|follow|share|read more)/i));\n  \n  // Return the first N substantive sentences as key points\n  return sentences.slice(0, maxPoints);\n}\n\nconst title = cleanText(input.title) || 'Untitled Article';\nconst body = cleanText(input.body);\nconst metaDescription = cleanText(input.meta_description);\n\n// Truncate body to ~4000 chars for AI context window efficiency\nconst maxChars = 4000;\nconst truncatedBody = body.length > maxChars \n  ? body.substring(0, maxChars) + '... [truncated]'\n  : body;\n\nconst keyPoints = extractKeyPoints(body);\nconst wordCount = body.split(/\\s+/).length;\nconst readingTimeMin = Math.ceil(wordCount / 200);\n\nreturn [{\n  json: {\n    article: {\n      title,\n      body: truncatedBody,\n      fullBodyLength: body.length,\n      metaDescription,\n      keyPoints,\n      wordCount,\n      readingTimeMin\n    },\n    url: input.url,\n    platforms: input.platforms,\n    tone: input.tone,\n    author_handle: input.author_handle,\n    timestamp: input.timestamp\n  }\n}];"
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000006",
+      "name": "Clean & Prepare Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 400]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a LinkedIn content strategist who creates high-performing professional posts. You write in a clear, authoritative, and engaging tone. Every post must follow the hook-body-CTA framework."
+            },
+            {
+              "role": "user",
+              "content": "=Create a LinkedIn post from this article.\n\nArticle Title: {{ $json.article.title }}\nArticle Content: {{ $json.article.body }}\nAuthor Handle: {{ $json.author_handle }}\nTone: {{ $json.tone }}\n\nRules:\n- Start with a bold hook line (question, surprising stat, or contrarian take)\n- Use short paragraphs (1-2 sentences each)\n- Include 2-3 line breaks between sections for readability\n- Add bullet points or numbered lists for key takeaways\n- End with a clear call-to-action (question to drive comments)\n- Keep total length under 1300 characters\n- Do not use hashtags in the body (add 3-5 hashtags at the very end, separated by a blank line)\n- Do not use generic filler phrases like \"In today's world\" or \"It's no secret that\"\n- Write in first person when the tone is professional\n- Reference the original article with \"Link in comments\" at the end\n\nReturn ONLY the LinkedIn post text, nothing else."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 600
+        }
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000010",
+      "name": "AI Generate LinkedIn Post",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.6,
+      "position": [1260, 100],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a Twitter/X ghostwriter who creates viral threads. You understand pacing, hooks, and how to keep readers clicking \"Show more\". Every thread must tell a story arc."
+            },
+            {
+              "role": "user",
+              "content": "=Create a Twitter/X thread from this article.\n\nArticle Title: {{ $json.article.title }}\nArticle Content: {{ $json.article.body }}\nAuthor Handle: {{ $json.author_handle }}\n\nRules:\n- Create exactly 5-7 tweets in a thread\n- Tweet 1: Strong hook that creates curiosity (no \"Thread:\" or \"1/\" prefix). Use a pattern interrupt.\n- Tweets 2-5: Key insights, one per tweet. Use concrete examples, data, or analogies.\n- Tweet 6: Practical takeaway or actionable advice\n- Final tweet: CTA to read the full article + \"Follow {{ $json.author_handle }} for more\"\n- Each tweet MUST be under 280 characters (this is critical)\n- Use line breaks within tweets for readability\n- Include 1-2 relevant emojis per tweet maximum\n- No hashtags except in the final tweet (max 2)\n- Number format: use \"1/\" at the start of each tweet\n\nReturn the thread as a JSON array of strings, one string per tweet. Example:\n[\"1/ Hook tweet here\", \"2/ Second tweet here\", \"3/ Third tweet here\"]\n\nReturn ONLY the JSON array, no other text."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.8,
+          "maxTokens": 800
+        }
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000011",
+      "name": "AI Generate Twitter Thread",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.6,
+      "position": [1260, 340],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an email marketing specialist who writes high-converting newsletter content. You optimize for open rates (subject lines) and click-through rates (compelling summaries with clear value proposition)."
+            },
+            {
+              "role": "user",
+              "content": "=Create an email newsletter summary from this article.\n\nArticle Title: {{ $json.article.title }}\nArticle Content: {{ $json.article.body }}\nMeta Description: {{ $json.article.metaDescription }}\nArticle URL: {{ $json.url }}\nReading Time: {{ $json.article.readingTimeMin }} minutes\n\nRules:\n- Subject line: 6-10 words, create urgency or curiosity. No clickbait. No ALL CAPS.\n- Preview text: 40-90 characters, complements the subject line (shown in inbox preview)\n- Body structure:\n  1. Opening hook (1-2 sentences, personal and relatable)\n  2. \"Here's what you need to know:\" section with 3-4 bullet points\n  3. \"Why this matters\" paragraph (2-3 sentences connecting to reader's goals)\n  4. Pull quote or key statistic from the article\n  5. CTA button text: action-oriented (e.g., \"Read the Full Breakdown\")\n- Keep total body under 200 words\n- Write in second person (\"you\")\n- Include the article reading time\n\nReturn as JSON with this exact structure:\n{\n  \"subject_line\": \"...\",\n  \"preview_text\": \"...\",\n  \"body_html\": \"<p>...</p>\",\n  \"cta_text\": \"...\",\n  \"cta_url\": \"...\"\n}\n\nReturn ONLY the JSON object, no other text."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 800
+        }
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000012",
+      "name": "AI Generate Newsletter",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.6,
+      "position": [1260, 580],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a social media manager specializing in Instagram content. You create captions that drive engagement through storytelling, emotional hooks, and strategic hashtag usage. You understand the Instagram algorithm rewards saves and shares."
+            },
+            {
+              "role": "user",
+              "content": "=Create an Instagram caption from this article.\n\nArticle Title: {{ $json.article.title }}\nArticle Content: {{ $json.article.body }}\nKey Points: {{ $json.article.keyPoints }}\nAuthor Handle: {{ $json.author_handle }}\n\nRules:\n- Start with an emoji + attention-grabbing first line (this shows in the feed preview)\n- Use a storytelling or listicle format\n- Include line breaks between paragraphs (Instagram collapses text after 125 chars)\n- Add a clear CTA: \"Save this for later\", \"Share with someone who needs this\", or \"Drop a [emoji] if you agree\"\n- Keep caption body under 500 characters (before hashtags)\n- Add \"Link in bio\" reference\n- After two blank lines, add exactly 30 relevant hashtags\n- Mix hashtag sizes: 10 large (500k+ posts), 10 medium (50k-500k), 10 niche (under 50k)\n- First 5 hashtags should be the most relevant to the specific topic\n\nReturn as JSON with this exact structure:\n{\n  \"caption\": \"...\",\n  \"hashtags\": \"#tag1 #tag2 ...\",\n  \"suggested_carousel_slides\": [\"Slide 1 text\", \"Slide 2 text\", ...]\n}\n\nReturn ONLY the JSON object, no other text."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.8,
+          "maxTokens": 800
+        }
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000013",
+      "name": "AI Generate Instagram Caption",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.6,
+      "position": [1260, 820],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "linkedin-check",
+              "leftValue": "={{ $('Clean & Prepare Text').item.json.platforms }}",
+              "rightValue": "linkedin",
+              "operator": {
+                "type": "array",
+                "operation": "contains"
+              }
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000020",
+      "name": "LinkedIn Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1500, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "twitter-check",
+              "leftValue": "={{ $('Clean & Prepare Text').item.json.platforms }}",
+              "rightValue": "twitter",
+              "operator": {
+                "type": "array",
+                "operation": "contains"
+              }
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000021",
+      "name": "Twitter Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1500, 340]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "newsletter-check",
+              "leftValue": "={{ $('Clean & Prepare Text').item.json.platforms }}",
+              "rightValue": "newsletter",
+              "operator": {
+                "type": "array",
+                "operation": "contains"
+              }
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000022",
+      "name": "Newsletter Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1500, 580]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "instagram-check",
+              "leftValue": "={{ $('Clean & Prepare Text').item.json.platforms }}",
+              "rightValue": "instagram",
+              "operator": {
+                "type": "array",
+                "operation": "contains"
+              }
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000023",
+      "name": "Instagram Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1500, 820]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "platform",
+              "name": "platform",
+              "value": "linkedin",
+              "type": "string"
+            },
+            {
+              "id": "content",
+              "name": "content",
+              "value": "={{ $('AI Generate LinkedIn Post').item.json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "generated",
+              "type": "string"
+            },
+            {
+              "id": "char_count",
+              "name": "char_count",
+              "value": "={{ $('AI Generate LinkedIn Post').item.json.text.length }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000030",
+      "name": "Format LinkedIn Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1740, 60]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "platform",
+              "name": "platform",
+              "value": "twitter",
+              "type": "string"
+            },
+            {
+              "id": "content",
+              "name": "content",
+              "value": "={{ $('AI Generate Twitter Thread').item.json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "generated",
+              "type": "string"
+            },
+            {
+              "id": "tweet_count",
+              "name": "tweet_count",
+              "value": "={{ JSON.parse($('AI Generate Twitter Thread').item.json.text).length }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000031",
+      "name": "Format Twitter Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1740, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "platform",
+              "name": "platform",
+              "value": "newsletter",
+              "type": "string"
+            },
+            {
+              "id": "content",
+              "name": "content",
+              "value": "={{ $('AI Generate Newsletter').item.json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "generated",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000032",
+      "name": "Format Newsletter Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1740, 540]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "platform",
+              "name": "platform",
+              "value": "instagram",
+              "type": "string"
+            },
+            {
+              "id": "content",
+              "name": "content",
+              "value": "={{ $('AI Generate Instagram Caption').item.json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "generated",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000033",
+      "name": "Format Instagram Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1740, 780]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000040",
+      "name": "Merge All Outputs",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2040, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all platform outputs into a single summary record\nconst items = $input.all();\nconst firstItem = items[0]?.json || {};\n\n// Collect all platform results\nconst platformResults = {};\nfor (const item of items) {\n  const d = item.json;\n  if (d.platform && d.content) {\n    platformResults[d.platform] = {\n      content: d.content,\n      status: d.status || 'generated',\n      char_count: d.char_count || d.content.length\n    };\n  }\n}\n\nconst platformsGenerated = Object.keys(platformResults);\nconst totalChars = Object.values(platformResults)\n  .reduce((sum, p) => sum + (p.char_count || 0), 0);\n\n// Build Slack summary message\nlet slackMessage = `*Content Repurposed Successfully* :white_check_mark:\\n`;\nslackMessage += `*Source:* ${firstItem.url || 'Unknown'}\\n`;\nslackMessage += `*Article:* ${firstItem.article?.title || 'Unknown'}\\n`;\nslackMessage += `*Platforms:* ${platformsGenerated.join(', ')}\\n`;\nslackMessage += `*Total content generated:* ${totalChars.toLocaleString()} characters\\n`;\nslackMessage += `*Timestamp:* ${firstItem.timestamp || new Date().toISOString()}\\n\\n`;\n\nfor (const [platform, data] of Object.entries(platformResults)) {\n  const preview = data.content.substring(0, 150).replace(/\\n/g, ' ');\n  slackMessage += `--- *${platform.toUpperCase()}* (${data.char_count} chars) ---\\n`;\n  slackMessage += `${preview}...\\n\\n`;\n}\n\nreturn [{\n  json: {\n    url: firstItem.url,\n    article_title: firstItem.article?.title || 'Unknown',\n    timestamp: firstItem.timestamp || new Date().toISOString(),\n    platforms_generated: platformsGenerated.join(', '),\n    linkedin_content: platformResults.linkedin?.content || '',\n    twitter_content: platformResults.twitter?.content || '',\n    newsletter_content: platformResults.newsletter?.content || '',\n    instagram_content: platformResults.instagram?.content || '',\n    total_characters: totalChars,\n    slack_message: slackMessage,\n    status: 'complete'\n  }\n}];"
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000041",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2280, 400]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            { "id": "url", "displayName": "url", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "article_title", "displayName": "article_title", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "timestamp", "displayName": "timestamp", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "platforms_generated", "displayName": "platforms_generated", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "linkedin_content", "displayName": "linkedin_content", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "twitter_content", "displayName": "twitter_content", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "newsletter_content", "displayName": "newsletter_content", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "instagram_content", "displayName": "instagram_content", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "total_characters", "displayName": "total_characters", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": false },
+            { "id": "status", "displayName": "status", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000042",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2520, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#content-repurposer",
+        "text": "={{ $json.slack_message }}",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000043",
+      "name": "Send Slack Summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [2520, 500],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "SLACK_CREDENTIAL_ID",
+          "name": "Slack OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, article: $json.article_title, platforms: $json.platforms_generated, total_characters: $json.total_characters, timestamp: $json.timestamp }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a1b2c3d4-1111-4000-a000-000000000044",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2760, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          { "node": "Set Defaults", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          { "node": "Set Defaults", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Set Defaults": {
+      "main": [
+        [
+          { "node": "Fetch Article", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Article": {
+      "main": [
+        [
+          { "node": "Extract Article Content", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Extract Article Content": {
+      "main": [
+        [
+          { "node": "Clean & Prepare Text", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Clean & Prepare Text": {
+      "main": [
+        [
+          { "node": "AI Generate LinkedIn Post", "type": "main", "index": 0 },
+          { "node": "AI Generate Twitter Thread", "type": "main", "index": 0 },
+          { "node": "AI Generate Newsletter", "type": "main", "index": 0 },
+          { "node": "AI Generate Instagram Caption", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "AI Generate LinkedIn Post": {
+      "main": [
+        [
+          { "node": "LinkedIn Enabled?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "AI Generate Twitter Thread": {
+      "main": [
+        [
+          { "node": "Twitter Enabled?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "AI Generate Newsletter": {
+      "main": [
+        [
+          { "node": "Newsletter Enabled?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "AI Generate Instagram Caption": {
+      "main": [
+        [
+          { "node": "Instagram Enabled?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "LinkedIn Enabled?": {
+      "main": [
+        [
+          { "node": "Format LinkedIn Output", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "Twitter Enabled?": {
+      "main": [
+        [
+          { "node": "Format Twitter Output", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "Newsletter Enabled?": {
+      "main": [
+        [
+          { "node": "Format Newsletter Output", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "Instagram Enabled?": {
+      "main": [
+        [
+          { "node": "Format Instagram Output", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "Format LinkedIn Output": {
+      "main": [
+        [
+          { "node": "Merge All Outputs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Format Twitter Output": {
+      "main": [
+        [
+          { "node": "Merge All Outputs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Format Newsletter Output": {
+      "main": [
+        [
+          { "node": "Merge All Outputs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Format Instagram Output": {
+      "main": [
+        [
+          { "node": "Merge All Outputs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Merge All Outputs": {
+      "main": [
+        [
+          { "node": "Build Summary", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Build Summary": {
+      "main": [
+        [
+          { "node": "Log to Google Sheets", "type": "main", "index": 0 },
+          { "node": "Send Slack Summary", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Log to Google Sheets": {
+      "main": [
+        [
+          { "node": "Webhook Response", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "AI", "id": "1" },
+    { "name": "Content", "id": "2" },
+    { "name": "Automation", "id": "3" },
+    { "name": "Social Media", "id": "4" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-03-22T00:00:00.000Z",
+  "versionId": "1"
+}

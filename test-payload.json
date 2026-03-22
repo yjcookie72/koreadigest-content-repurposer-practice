@@ -1,0 +1,29 @@
+[
+  {
+    "description": "AI/tech blog post - all platforms enabled",
+    "payload": {
+      "url": "https://blog.hubspot.com/marketing/ai-content-creation",
+      "platforms": ["linkedin", "twitter", "newsletter", "instagram"],
+      "tone": "professional",
+      "author_handle": "@jaikanth"
+    }
+  },
+  {
+    "description": "SaaS growth article - LinkedIn and newsletter only",
+    "payload": {
+      "url": "https://buffer.com/resources/content-repurposing/",
+      "platforms": ["linkedin", "newsletter"],
+      "tone": "conversational",
+      "author_handle": "@jaikanth"
+    }
+  },
+  {
+    "description": "Productivity article - Twitter and Instagram only, casual tone",
+    "payload": {
+      "url": "https://jamesclear.com/3-2-1/march-20-2025",
+      "platforms": ["twitter", "instagram"],
+      "tone": "casual",
+      "author_handle": "@jaikanth"
+    }
+  }
+]
