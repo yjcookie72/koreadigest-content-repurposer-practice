@@ -1,0 +1,36 @@
+{
+  "purpose": "The Korea Digest draft-only configuration for n8n-content-repurposer",
+  "input": {
+    "url": "https://thekoreadigest.blogspot.com/2026/11/why-did-retail-investors-keep-buying-as.html",
+    "platforms": [
+      "twitter",
+      "newsletter",
+      "instagram"
+    ],
+    "tone": "clear, contextual, factual English for international readers",
+    "author_handle": "@koreadigest"
+  },
+  "set_defaults": {
+    "url": "={{ $json.body?.url || $json.url || 'https://thekoreadigest.blogspot.com/2026/11/why-did-retail-investors-keep-buying-as.html' }}",
+    "platforms": "={{ $json.body?.platforms || $json.platforms || ['twitter', 'newsletter', 'instagram'] }}",
+    "tone": "={{ $json.body?.tone || $json.tone || 'clear, contextual, factual English for international readers' }}",
+    "author_handle": "={{ $json.body?.author_handle || $json.author_handle || '@koreadigest' }}"
+  },
+  "x_package": {
+    "system": "You write concise English posts for The Korea Digest, a factual magazine for readers outside South Korea. Preserve verified facts and clearly separate facts, Korean context, sampled online reactions, and the editor’s view. Do not invent numbers, quotes, or claims.",
+    "output": "Return exactly two strings in a JSON array. String 1 is the main X post: no more than 280 characters, in English, with no URL, no hashtags, and no emojis. Include one verified fact, one Korean context point, and a short question or closing. String 2 is the first reply: one short introduction sentence followed by the exact article URL. Do not invent photo credits. End the reply with: Photo source: add the exact source from the article’s Sources section before publishing."
+  },
+  "newsletter": {
+    "system": "You write accurate English newsletter drafts for The Korea Digest, a factual magazine for readers outside South Korea. Preserve the article’s facts, sources, Korean context, and limits. Never invent statistics, quotes, or public opinion."
+  },
+  "instagram": {
+    "system": "You write accurate English Instagram drafts for The Korea Digest, a factual magazine for readers outside South Korea. Adapt the article for a caption and carousel without inventing facts, statistics, quotations, or generalizing sampled comments into public opinion."
+  },
+  "safety": [
+    "Draft generation only. Do not connect Blogger, X, or Instagram posting nodes.",
+    "Do not store API keys, passwords, cookies, or access tokens in GitHub.",
+    "Run a manual test first and compare every output with the source article.",
+    "Treat comments as sampled reactions, not as the whole Korean public.",
+    "Keep the article URL in the X first-reply draft, not in the main X post."
+  ]
+}
